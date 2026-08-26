@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Offline - Pomodoro Pro</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      background: #111827;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+    .container { text-align: center; max-width: 400px; }
+    .icon { font-size: 4rem; margin-bottom: 1.5rem; }
+    h1 { font-size: 1.75rem; margin-bottom: 1rem; color: #ef4444; }
+    p { color: #9ca3af; line-height: 1.6; margin-bottom: 1.5rem; }
+    .btn {
+      display: inline-block;
+      padding: 0.75rem 2rem;
+      background: #ef4444;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: opacity 0.2s;
+    }
+    .btn:hover { opacity: 0.9; }
+    .hint { margin-top: 2rem; font-size: 0.85rem; color: #6b7280; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">📡</div>
+    <h1>Du bist offline</h1>
+    <p>Die App ben&ouml;tigt eine Internetverbindung f&uuml;r Login, Synchronisierung und To-Do-Verwaltung.</p>
+    <button class="btn" onclick="window.location.reload()">Erneut versuchen</button>
+    <p class="hint">Der Timer funktioniert auch offline, sobald du wieder verbunden bist.</p>
+  </div>
+</body>
+</html>

@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Pomodoro Focus</title>
+  <meta name="description" content="Pomodoro-Timer mit Aufgabenliste und Statistik. L&auml;uft vollst&auml;ndig im Browser, ohne Konto und ohne Server.">
+  <meta name="theme-color" content="#ef4444">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Pomodoro">
+  <link rel="stylesheet" href="/output.css">
+  <style>
+    :root {
+      --bg-primary: #111827;
+      --bg-secondary: #1f2937;
+      --bg-tertiary: #374151;
+      --text-primary: #ffffff;
+      --text-secondary: #9ca3af;
+      --accent: #ef4444;
+    }
+
+    [data-theme="light"] {
+      --bg-primary: #f3f4f6;
+      --bg-secondary: #ffffff;
+      --bg-tertiary: #e5e7eb;
+      --text-primary: #111827;
+      --text-secondary: #6b7280;
+      --accent: #dc2626;
+    }
+
+    body {
+      overscroll-behavior: none;
+      -webkit-tap-highlight-color: transparent;
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      transition: background-color 0.3s, color 0.3s;
+    }
+
+    .bg-primary { background-color: var(--bg-primary); }
+    .bg-secondary { background-color: var(--bg-secondary); }
+    .bg-tertiary { background-color: var(--bg-tertiary); }
+    .text-primary { color: var(--text-primary); }
+    .text-secondary { color: var(--text-secondary); }
+
+    .timer-circle {
+      background: conic-gradient(var(--accent) 0deg, var(--accent) var(--progress, 0deg), var(--bg-tertiary) var(--progress, 0deg));
+    }
+
+    .modal {
+      display: none;
+    }
+    .modal.active {
+      display: flex;
+    }
+
+    .quote-fade-in {
+      animation: fadeIn 0.5s ease-in;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(100px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    @keyframes slideOut {
+      from { opacity: 1; transform: translateX(0); }
+      to { opacity: 0; transform: translateX(100px); }
+    }
+
+    /* PDF Print Styles */
+    @media print {
+      body {
+        background: white;
+        color: black;
+      }
+      .print-content {
+        display: block !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+    }
+  </style>
+</head>
+<body class="min-h-screen">
+  <div class="max-w-md mx-auto px-4 py-6">
+
+    <!-- Header -->
+    <header class="flex justify-between items-center mb-6">
+      <h1 class="text-3xl font-bold" style="color: var(--accent)">🍅 Pomodoro</h1>
+
+      <div class="flex items-center gap-3">
+        <!-- PWA Install -->
+        <button id="pwa-install-btn" class="p-2 rounded-lg bg-secondary hover:bg-tertiary transition" title="App installieren" style="display:none;">
+          📲
+        </button>
+
+        <!-- Dark Mode Toggle -->
+        <button id="theme-toggle" class="p-2 rounded-lg bg-secondary hover:bg-tertiary transition" title="Theme wechseln">
+          <span id="theme-icon">🌙</span>
+        </button>
+
+        <!-- User Menu / Auth Buttons -->
+      </div>
+    </header>
+
+    <!-- E-Mail Verifizierungs-Banner -->
+
+    <!-- Stats Bar (Gratis) -->
+    <div class="bg-secondary rounded-xl p-4 mb-6 shadow-lg">
+      <div class="grid grid-cols-3 gap-4 text-center mb-4">
+        <div>
+          <div class="text-2xl font-bold" id="sessions-today">0</div>
+          <div class="text-xs text-secondary">Heute</div>
+        </div>
+        <div>
+          <div class="text-2xl font-bold" id="streak-count">0</div>
+          <div class="text-xs text-secondary">Tage Streak</div>
+        </div>
+        <div>
+          <div class="text-2xl font-bold" id="total-minutes">0</div>
+          <div class="text-xs text-secondary">Min gesamt</div>
+        </div>
+      </div>
+
+      <!-- Erweiterte Stats Toggle -->
+      <button id="toggle-advanced-stats" class="w-full text-sm text-secondary hover:text-primary transition py-2 border-t border-tertiary">
+        <span id="toggle-stats-text">📊 Erweiterte Statistiken anzeigen</span>
+      </button>
+
+      <!-- Erweiterte Statistiken (ausklappbar) -->
+      <div id="advanced-stats" class="hidden mt-4 pt-4 border-t border-tertiary">
+        <!-- Wochenübersicht -->
+        <div class="mb-6">
+          <h3 class="text-sm font-semibold mb-3 text-secondary">Letzte 7 Tage</h3>
+          <div id="week-chart" class="flex items-end justify-between gap-1" style="height: 100px;">
+            <!-- Wird dynamisch gefüllt -->
+          </div>
+          <div id="week-labels" class="flex justify-between mt-2 text-xs text-secondary">
+            <!-- Wird dynamisch gefüllt -->
+          </div>
+        </div>
+
+        <!-- Heatmap -->
+        <div>
+          <h3 class="text-sm font-semibold mb-3 text-secondary">Aktivitäts-Heatmap (12 Wochen)</h3>
+          <div class="flex gap-1 overflow-x-auto pb-2">
+            <div id="heatmap-container" class="flex gap-1">
+              <!-- Wird dynamisch gefüllt -->
+            </div>
+          </div>
+          <div class="flex justify-between mt-2 text-xs text-secondary">
+            <span>Weniger</span>
+            <div class="flex gap-1 items-center">
+              <div class="w-3 h-3 rounded-sm" style="background-color: var(--bg-tertiary);"></div>
+              <div class="w-3 h-3 rounded-sm" style="background-color: rgba(239, 68, 68, 0.3);"></div>
+              <div class="w-3 h-3 rounded-sm" style="background-color: rgba(239, 68, 68, 0.6);"></div>
+              <div class="w-3 h-3 rounded-sm" style="background-color: rgba(239, 68, 68, 0.9);"></div>
+              <div class="w-3 h-3 rounded-sm" style="background-color: rgba(239, 68, 68, 1);"></div>
+              <span class="ml-1">Mehr</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Timer Section (immer sichtbar) -->
+    <div class="bg-secondary rounded-xl p-6 mb-6 shadow-lg">
+      <!-- Timer Display -->
+      <div class="flex justify-center mb-6">
+        <div class="relative w-48 h-48 rounded-full timer-circle flex items-center justify-center shadow-inner">
+          <div class="bg-secondary w-40 h-40 rounded-full flex items-center justify-center">
+            <span id="timer-display" class="text-5xl font-mono font-bold">25:00</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Timer Buttons -->
+      <div class="grid grid-cols-3 gap-3 mb-4">
+        <button id="start-btn" class="bg-green-600 hover:bg-green-700 active:bg-green-800 py-3 px-4 rounded-lg font-semibold transition text-white">
+          Start
+        </button>
+        <button id="pause-btn" class="bg-yellow-600 hover:bg-yellow-700 active:bg-yellow-800 py-3 px-4 rounded-lg font-semibold transition text-white" disabled>
+          Pause
+        </button>
+        <button id="reset-btn" class="bg-red-600 hover:bg-red-700 active:bg-red-800 py-3 px-4 rounded-lg font-semibold transition text-white">
+          Reset
+        </button>
+      </div>
+
+      <!-- Timer Presets -->
+      <div class="grid grid-cols-3 gap-2 text-sm mb-4">
+        <button data-minutes="25" class="preset-btn bg-tertiary hover:bg-opacity-80 active:bg-opacity-60 py-2 rounded-lg transition">
+          25 Min
+        </button>
+        <button data-minutes="5" class="preset-btn bg-tertiary hover:bg-opacity-80 active:bg-opacity-60 py-2 rounded-lg transition">
+          5 Min
+        </button>
+        <button data-minutes="15" class="preset-btn bg-tertiary hover:bg-opacity-80 active:bg-opacity-60 py-2 rounded-lg transition">
+          15 Min
+        </button>
+      </div>
+
+      <!-- Custom Timer Input -->
+      <div class="border-t border-tertiary pt-4 mb-4">
+        <label class="block text-sm text-secondary mb-2">Benutzerdefinierter Timer</label>
+        <div class="flex gap-2 mb-2">
+          <input
+            type="number"
+            id="custom-timer-input"
+            min="1"
+            max="180"
+            placeholder="Minuten (1-180)"
+            class="flex-1 bg-tertiary rounded-lg px-4 py-2 text-primary focus:outline-none focus:ring-2"
+            style="border-color: var(--accent);"
+          >
+          <button
+            id="set-custom-timer-btn"
+            class="px-6 py-2 rounded-lg font-semibold transition text-white"
+            style="background-color: var(--accent);"
+          >
+            Setzen
+          </button>
+        </div>
+        <div class="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="save-custom-timer-checkbox"
+            class="w-4 h-4 rounded cursor-pointer"
+            style="accent-color: var(--accent);"
+          >
+          <label for="save-custom-timer-checkbox" class="text-sm text-secondary cursor-pointer">
+            Timer speichern
+          </label>
+        </div>
+      </div>
+
+      <!-- Saved Custom Timers -->
+      <div id="saved-timers-section" class="border-t border-tertiary pt-4 mb-4 hidden">
+        <label class="block text-sm text-secondary mb-2">Gespeicherte Timer</label>
+        <div id="saved-timers-list" class="grid grid-cols-3 gap-2 text-sm">
+          <!-- Wird dynamisch gefüllt -->
+        </div>
+      </div>
+
+      <!-- Sound Auswahl -->
+      <div class="border-t border-tertiary pt-4">
+        <label class="block text-sm text-secondary mb-2">Timer-Sound</label>
+        <div class="flex gap-2">
+          <select id="sound-select" class="flex-1 bg-tertiary rounded-lg px-4 py-2 text-primary">
+            <option value="beep">Standard Beep</option>
+            <option value="chime">Sanfter Chime</option>
+            <option value="bell">Glocke</option>
+          </select>
+          <button id="test-sound-btn" class="bg-tertiary hover:bg-quaternary rounded-lg px-4 py-2 text-primary transition-colors" title="Sound testen">
+            🔊
+          </button>
+        </div>
+      </div>
+
+      <!-- Pomodoro Rhythmus -->
+      <div class="border-t border-tertiary pt-4 mt-4">
+        <div class="flex justify-between items-center mb-3">
+          <label class="block text-sm text-secondary">Pomodoro-Rhythmus</label>
+          <button id="toggle-rhythm-btn" class="text-xs text-secondary hover:text-primary transition">
+            <span id="rhythm-toggle-text">▼ Einrichten</span>
+          </button>
+        </div>
+
+        <!-- Aktiver Rhythmus Anzeige -->
+        <div id="active-rhythm-display" class="hidden mb-3">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span id="rhythm-phases-display" class="text-sm"></span>
+          </div>
+          <div class="flex items-center gap-2 mt-2">
+            <span id="current-phase-indicator" class="text-xs px-2 py-1 rounded-full"></span>
+            <span id="rhythm-cycle-count" class="text-xs text-secondary"></span>
+          </div>
+        </div>
+
+        <!-- Rhythmus Steuerung -->
+        <div id="rhythm-controls" class="hidden mb-3">
+          <button id="start-rhythm-btn" class="w-full py-2 rounded-lg font-semibold transition text-white mb-2" style="background: linear-gradient(135deg, #10b981, #059669);">
+            ▶️ Rhythmus starten
+          </button>
+          <button id="stop-rhythm-btn" class="hidden w-full bg-tertiary hover:bg-opacity-80 py-2 rounded-lg font-semibold transition mb-2">
+            ⏹️ Rhythmus stoppen
+          </button>
+        </div>
+
+        <!-- Rhythmus Editor (ausklappbar) -->
+        <div id="rhythm-editor" class="hidden">
+          <!-- Preset Buttons -->
+          <div class="mb-3">
+            <label class="block text-xs text-secondary mb-2">Schnellauswahl</label>
+            <div class="grid grid-cols-2 gap-2">
+              <button class="rhythm-preset bg-tertiary hover:bg-opacity-80 py-2 px-3 rounded-lg text-xs transition" data-preset="classic">
+                🍅 Klassisch (25-5-25-5-25-15)
+              </button>
+              <button class="rhythm-preset bg-tertiary hover:bg-opacity-80 py-2 px-3 rounded-lg text-xs transition" data-preset="short">
+                ⚡ Kurz (15-3-15-3-15-10)
+              </button>
+              <button class="rhythm-preset bg-tertiary hover:bg-opacity-80 py-2 px-3 rounded-lg text-xs transition" data-preset="long">
+                🧘 Lang (50-10-50-30)
+              </button>
+              <button class="rhythm-preset bg-tertiary hover:bg-opacity-80 py-2 px-3 rounded-lg text-xs transition" data-preset="custom">
+                ✏️ Eigener Rhythmus
+              </button>
+            </div>
+          </div>
+
+          <!-- Custom Rhythm Builder -->
+          <div id="custom-rhythm-builder" class="hidden">
+            <label class="block text-xs text-secondary mb-2">Phasen definieren</label>
+            <div id="rhythm-phases-list" class="space-y-2 mb-3">
+              <!-- Phasen werden dynamisch eingefügt -->
+            </div>
+            <button id="add-phase-btn" class="w-full bg-tertiary hover:bg-opacity-80 py-2 rounded-lg text-sm transition mb-3">
+              + Phase hinzufügen
+            </button>
+            <div class="flex items-center gap-2 mb-3">
+              <input type="checkbox" id="rhythm-auto-repeat" class="w-4 h-4" style="accent-color: var(--accent);" checked>
+              <label for="rhythm-auto-repeat" class="text-sm text-secondary">Automatisch wiederholen</label>
+            </div>
+            <button id="save-rhythm-btn" class="w-full py-2 rounded-lg font-semibold transition text-white" style="background-color: var(--accent);">
+              💾 Rhythmus speichern
+            </button>
+          </div>
+
+          <!-- Rhythmus löschen -->
+          <button id="delete-rhythm-btn" class="hidden w-full mt-2 text-sm text-red-500 hover:text-red-400 transition">
+            🗑️ Rhythmus löschen
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Täglicher Motivations-Quote -->
+    <div id="daily-quote-section" class="bg-secondary rounded-xl p-4 mb-6 shadow-lg">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3 flex-1">
+          <span class="text-2xl">💡</span>
+          <p id="daily-quote-text" class="text-sm italic text-secondary"></p>
+        </div>
+        <button id="refresh-quote-btn" class="text-secondary hover:text-primary transition p-2" title="Neuer Spruch">
+          🔄
+        </button>
+      </div>
+    </div>
+
+    <!-- Session-Completion Quote (nach Pomodoro) -->
+    <div id="quote-section" class="bg-secondary rounded-xl p-6 mb-6 shadow-lg hidden">
+      <div class="text-center quote-fade-in">
+        <div class="text-4xl mb-3">💪</div>
+        <p id="quote-text" class="text-lg font-medium mb-2"></p>
+        <p class="text-sm text-secondary">Weiter so!</p>
+      </div>
+    </div>
+
+    <!-- Aufgabenliste -->
+    <div class="bg-secondary rounded-xl p-6 shadow-lg">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-xl font-bold">📋 To-Do Liste</h2>
+        <div class="flex gap-2">
+        </div>
+      </div>
+
+
+      <!-- Login Required Message -->
+
+      <!-- Aufgabenliste -->
+      <div id="todo-content">
+
+        <!-- Category Filter -->
+        <div class="mb-4 flex gap-2 overflow-x-auto pb-2">
+          <button class="category-filter active px-3 py-1 rounded-full text-sm bg-tertiary whitespace-nowrap" data-category="all">
+            Alle
+          </button>
+          <button class="category-filter px-3 py-1 rounded-full text-sm bg-tertiary whitespace-nowrap" data-category="work">
+            🏢 Arbeit
+          </button>
+          <button class="category-filter px-3 py-1 rounded-full text-sm bg-tertiary whitespace-nowrap" data-category="personal">
+            🏠 Privat
+          </button>
+          <button class="category-filter px-3 py-1 rounded-full text-sm bg-tertiary whitespace-nowrap" data-category="urgent">
+            ⚡ Dringend
+          </button>
+        </div>
+
+        <!-- Export Buttons -->
+        <div id="export-buttons" class="mb-4 flex gap-2 hidden">
+          <button
+            id="export-csv-btn"
+            class="flex-1 bg-tertiary hover:bg-opacity-80 active:bg-opacity-60 py-2 px-4 rounded-lg text-sm font-semibold transition"
+            title="Todos als CSV exportieren"
+          >
+            📥 CSV Export
+          </button>
+          <button
+            id="export-pdf-btn"
+            class="flex-1 bg-tertiary hover:bg-opacity-80 active:bg-opacity-60 py-2 px-4 rounded-lg text-sm font-semibold transition"
+            title="Todos als PDF exportieren"
+          >
+            📄 PDF Export
+          </button>
+        </div>
+
+        <!-- Add Todo Form -->
+        <form id="todo-form" class="mb-4">
+          <div class="flex gap-2 mb-2">
+            <input
+              type="text"
+              id="todo-input"
+              placeholder="Neue Aufgabe..."
+              class="flex-1 bg-tertiary border border-opacity-20 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 text-primary"
+              style="border-color: var(--accent);"
+              autocomplete="off"
+            >
+            <button
+              type="submit"
+              class="px-6 py-3 rounded-lg font-semibold transition text-white"
+              style="background-color: var(--accent);"
+            >
+              +
+            </button>
+          </div>
+          <div class="grid grid-cols-2 gap-2 mb-2">
+            <select id="todo-category" class="bg-tertiary rounded-lg px-4 py-2 text-primary text-sm">
+              <option value="personal">🏠 Privat</option>
+              <option value="work">🏢 Arbeit</option>
+              <option value="urgent">⚡ Dringend</option>
+            </select>
+            <select id="todo-priority" class="bg-tertiary rounded-lg px-4 py-2 text-primary text-sm">
+              <option value="low">🟢 Niedrig</option>
+              <option value="medium" selected>🟡 Mittel</option>
+              <option value="high">🔴 Hoch</option>
+            </select>
+          </div>
+          <div class="mb-2">
+            <input
+              type="date"
+              id="todo-due-date"
+              class="w-full bg-tertiary rounded-lg px-4 py-2 text-primary text-sm focus:outline-none focus:ring-2"
+              style="border-color: var(--accent);"
+              placeholder="Fälligkeitsdatum (optional)"
+            >
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <select id="todo-recurrence" class="bg-tertiary rounded-lg px-4 py-2 text-primary text-sm">
+              <option value="">Keine Wiederholung</option>
+              <option value="daily">🔄 Täglich</option>
+              <option value="weekly">📅 Wöchentlich</option>
+              <option value="monthly">📆 Monatlich</option>
+            </select>
+            <input
+              type="date"
+              id="todo-recurrence-end-date"
+              class="bg-tertiary rounded-lg px-4 py-2 text-primary text-sm focus:outline-none focus:ring-2 hidden"
+              style="border-color: var(--accent);"
+              placeholder="Wiederholung bis (optional)"
+            >
+          </div>
+        </form>
+
+        <!-- Todo List -->
+        <ul id="todo-list" class="space-y-2">
+          <!-- Todos werden hier dynamisch eingefügt -->
+        </ul>
+
+        <!-- Empty State -->
+        <div id="empty-state" class="text-center py-8 text-secondary hidden">
+          <p>Keine Aufgaben vorhanden</p>
+          <p class="text-sm">Füge eine neue Aufgabe hinzu!</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="text-center mt-8 text-secondary text-sm">
+      <p>Fokussiert arbeiten mit Pomodoro</p>
+    </footer>
+  </div>
+
+  <!-- Login Modal -->
+
+  <!-- Signup Modal -->
+
+  <!-- Onboarding Modal -->
+
+  <!-- Account Settings Modal -->
+
+  <div id="onboarding-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-center justify-center z-50">
+    <div class="bg-secondary rounded-2xl p-6 mx-4 w-full max-w-sm shadow-xl text-center">
+      <!-- Step 1 -->
+      <div class="onboarding-step" data-step="1">
+        <div class="text-5xl mb-4">&#9201;&#65039;</div>
+        <h2 class="text-xl font-bold text-primary mb-2">Willkommen bei Pomodoro!</h2>
+        <p class="text-secondary text-sm mb-6">Starte einen Timer und arbeite fokussiert in Intervallen. 25 Minuten Arbeit, 5 Minuten Pause.</p>
+      </div>
+      <!-- Step 2 -->
+      <div class="onboarding-step hidden" data-step="2">
+        <div class="text-5xl mb-4">&#128202;</div>
+        <h2 class="text-xl font-bold text-primary mb-2">Verfolge deinen Fortschritt</h2>
+        <p class="text-secondary text-sm mb-6">Sieh deine Sessions, Streaks und Fokusminuten auf einen Blick. Bleib motiviert!</p>
+      </div>
+      <!-- Step 3 -->
+      <div class="onboarding-step hidden" data-step="3">
+        <div class="text-5xl mb-4">&#128274;</div>
+        <h2 class="text-xl font-bold text-primary mb-2">Alles bleibt bei dir</h2>
+        <p class="text-secondary text-sm mb-6">Aufgaben, Statistik und Einstellungen liegen im Speicher dieses Browsers. Kein Konto, kein Server, keine &Uuml;bertragung.</p>
+      </div>
+
+      <!-- Progress dots -->
+      <div class="flex justify-center gap-2 mb-4">
+        <span class="onboarding-dot w-2 h-2 rounded-full" style="background: var(--accent);"></span>
+        <span class="onboarding-dot w-2 h-2 rounded-full bg-tertiary"></span>
+        <span class="onboarding-dot w-2 h-2 rounded-full bg-tertiary"></span>
+      </div>
+
+      <button id="onboarding-next-btn" class="w-full py-3 rounded-lg font-semibold transition text-white" style="background-color: var(--accent);">
+        Weiter
+      </button>
+    </div>
+  </div>
+
+  <footer class="mt-12 py-6 border-t text-center text-sm text-secondary" style="border-color: var(--bg-tertiary);">
+    <div class="max-w-md mx-auto px-4">
+      <p class="text-xs">
+        Open Source unter MIT-Lizenz &middot;
+        <a href="https://github.com/Mario-Mohar/pomodoro-focus" target="_blank" rel="noopener" class="underline" style="color: var(--accent);">Quellcode auf GitHub</a>
+      </p>
+      <p class="mt-2 text-xs">Alle Daten bleiben in diesem Browser.</p>
+    </div>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>
