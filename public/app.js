@@ -112,6 +112,18 @@ function getStatsKey() {
   return 'pomodoroStats';
 }
 
+// Tagesschluessel in Ortszeit. toISOString() liefert UTC, und damit landet
+// jede Session zwischen Mitternacht und 01:00 bzw. 02:00 auf dem Vortag --
+// waehrend die Streak-Logik mit toDateString() lokal rechnet. Beides muss
+// denselben Tag meinen, sonst zaehlt die Kachel eine Session, die im
+// Wochendiagramm und in der Heatmap auf gestern liegt.
+function localDateKey(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 function loadStats() {
   const key = getStatsKey();
   const saved = localStorage.getItem(key);
@@ -174,9 +186,13 @@ function loadTimerState() {
       const now = Date.now();
       timerState.timeRemaining = Math.max(0, Math.floor((timerState.timerEndTime - now) / 1000));
 
-      // If time ran out while page was closed
+      // If time ran out while page was closed. isRunning muss hier auf false,
+      // damit unten nicht weitergelaufen wird -- deshalb braucht der Abschluss
+      // ein eigenes Merkmal: eine Pruefung auf isRunning && timeRemaining === 0
+      // koennte nach dieser Zuweisung nie mehr zutreffen.
       if (timerState.timeRemaining === 0) {
         timerState.isRunning = false;
+        timerState.expiredWhileAway = true;
       }
     }
 
@@ -209,7 +225,7 @@ function restoreTimerState() {
   }
 
   // Check if timer completed while page was closed
-  if (savedState.isRunning && savedState.timeRemaining === 0) {
+  if (savedState.expiredWhileAway) {
     // Timer abgelaufen während Seite geschlossen war
     clearTimerState();
     onTimerComplete();
@@ -259,7 +275,7 @@ function recordSessionLocally(minutes) {
   stats.sessionsToday += 1;
   stats.totalSessions += 1;
   stats.totalMinutes += minutes;
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDateKey();
   if (!stats.dailyHistory) stats.dailyHistory = {};
   if (!stats.dailyHistory[today]) {
     stats.dailyHistory[today] = { sessions: 0, minutes: 0 };
@@ -339,7 +355,7 @@ function getLast7Days() {
   for (let i = 6; i >= 0; i--) {
     const date = new Date(today);
     date.setDate(date.getDate() - i);
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = localDateKey(date);
     const dayData = stats.dailyHistory[dateStr] || { sessions: 0, minutes: 0 };
 
     const dayNames = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
@@ -401,7 +417,7 @@ function getLast12Weeks() {
   for (let i = totalDays - 1; i >= 0; i--) {
     const date = new Date(today);
     date.setDate(date.getDate() - i);
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = localDateKey(date);
     const dayData = stats.dailyHistory[dateStr] || { sessions: 0, minutes: 0 };
 
     days.push({
