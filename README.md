@@ -34,6 +34,8 @@ läuft**. Kein Konto, kein Server, keine Datenübertragung — alles liegt im
 - **Export** der Aufgaben als CSV oder PDF
 - **Export der Statistik** als CSV — jeder Tag seit dem ersten mit einer Zeile,
   Tage ohne Sitzung als Nullzeile, damit die Datei direkt in ein Diagramm passt
+- **Import der Statistik** aus derselben CSV, mit Vorschau vor dem Übernehmen —
+  damit der Export nicht nur eine Kopie zum Ansehen ist, sondern eine Sicherung
 - **Pomodoro-Rhythmus** — Abfolge aus Arbeits- und Pausenblöcken einrichten
 - **Benachrichtigung und Ton** am Ende einer Session
 - **Zitat des Tages**, einmal täglich neu
@@ -104,8 +106,23 @@ Datum,Sessions,Minuten
 2026-08-29,6,150
 ```
 
-Wieder einlesen kann die App sie nicht — das wäre der zweite Schritt und
-brächte die Frage mit, was beim Zusammenführen mit vorhandenen Daten passiert.
+Dieselbe Datei liest die App über „📥 CSV einlesen" wieder ein. Zusammengeführt
+wird **je Tag, die Datei gewinnt**: Tage aus der Datei überschreiben, Tage die
+nur lokal existieren bleiben stehen. Eine Nullzeile ist dabei eine Aussage und
+keine Lücke — steht in der Datei für einen Tag `0,0`, war an dem Tag nichts, und
+lokale Zahlen für diesen Tag verschwinden.
+
+Vor dem Übernehmen zeigt die App, was passieren würde: wie viele Tage neu
+dazukommen, wie viele unverändert bleiben, wie viele überschrieben und wie viele
+geleert werden. Erst danach wird geschrieben.
+
+Gesamtzahlen und Streak werden anschließend aus der Historie neu berechnet,
+damit die Kachel nicht etwas anderes zeigt als die Heatmap. Eine kaputte Zeile
+führt zum Abbruch mit Angabe der Zeilennummer — lieber gar nichts einspielen als
+die Hälfte.
+
+Die Aufgaben lassen sich nicht zurücklesen; dort stellen sich eigene Fragen
+(IDs, Erledigt-Status), und das PDF ist ohnehin kein Eingabeformat.
 
 ## Aufbau
 

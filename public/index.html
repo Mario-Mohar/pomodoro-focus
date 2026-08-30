@@ -171,14 +171,24 @@
           </div>
         </div>
 
-        <!-- Statistik-Export -->
-        <button
-          id="export-stats-btn"
-          class="w-full mt-6 bg-tertiary hover:bg-opacity-80 active:bg-opacity-60 py-2 px-4 rounded-lg text-sm font-semibold transition"
-          title="Alle Sitzungsdaten als CSV exportieren"
-        >
-          📊 Statistik als CSV
-        </button>
+        <!-- Statistik-Export und -Import -->
+        <div class="mt-6 flex gap-2">
+          <button
+            id="export-stats-btn"
+            class="flex-1 bg-tertiary hover:bg-opacity-80 active:bg-opacity-60 py-2 px-4 rounded-lg text-sm font-semibold transition"
+            title="Alle Sitzungsdaten als CSV exportieren"
+          >
+            📊 Statistik als CSV
+          </button>
+          <button
+            id="import-stats-btn"
+            class="flex-1 bg-tertiary hover:bg-opacity-80 active:bg-opacity-60 py-2 px-4 rounded-lg text-sm font-semibold transition"
+            title="Eine exportierte Statistik-CSV wieder einlesen"
+          >
+            📥 CSV einlesen
+          </button>
+          <input id="import-stats-input" type="file" accept=".csv,text/csv" class="hidden">
+        </div>
       </div>
     </div>
 

@@ -103,6 +103,8 @@ const categoryFilters = document.querySelectorAll('.category-filter');
 const exportButtons = document.getElementById('export-buttons');
 const exportCSVBtn = document.getElementById('export-csv-btn');
 const exportStatsBtn = document.getElementById('export-stats-btn');
+const importStatsBtn = document.getElementById('import-stats-btn');
+const importStatsInput = document.getElementById('import-stats-input');
 const exportPDFBtn = document.getElementById('export-pdf-btn');
 
 // Store current todos for export
@@ -1021,6 +1023,207 @@ function exportStatsAsCSV() {
   showExportNotification(`Statistik exportiert (${rows.length} Tage).`);
 }
 
+// ---- Statistik-Import ------------------------------------------------------
+//
+// Ohne diesen Weg ist der Export eine Kopie zum Ansehen und keine Sicherung:
+// die App arbeitet ohne Konto und ohne Server, wer sein Browserprofil loescht,
+// hat sonst nichts, womit er zurueckkommt.
+
+// Liest die exportierte CSV. Gibt { days } oder { error } zurueck -- bei einer
+// kaputten Zeile lieber gar nichts einspielen als die Haelfte.
+function parseStatsCSV(text) {
+  // Der Export stellt ein BOM voran, damit Excel die Datei richtig liest.
+  const clean = String(text || '').replace(/^﻿/, '');
+  const lines = clean.split(/\r?\n/).filter(line => line.trim() !== '');
+
+  if (lines.length === 0) return { error: 'Die Datei ist leer.' };
+
+  const header = lines[0].split(',').map(part => part.trim());
+  if (header.length !== 3 || header[0] !== 'Datum'
+      || header[1] !== 'Sessions' || header[2] !== 'Minuten') {
+    return { error: 'Die Kopfzeile muss "Datum,Sessions,Minuten" lauten.' };
+  }
+
+  const days = {};
+  for (let i = 1; i < lines.length; i++) {
+    const lineNumber = i + 1;
+    const parts = lines[i].split(',').map(part => part.trim());
+
+    if (parts.length !== 3) {
+      return { error: `Zeile ${lineNumber} hat nicht drei Spalten.` };
+    }
+
+    const [date, sessionsRaw, minutesRaw] = parts;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return { error: `Zeile ${lineNumber}: "${date}" ist kein Datum im Format JJJJ-MM-TT.` };
+    }
+    // Ein Datum wie 2026-02-31 passt auf das Muster, existiert aber nicht.
+    const probe = new Date(date + 'T12:00:00');
+    if (isNaN(probe.getTime()) || localDateKey(probe) !== date) {
+      return { error: `Zeile ${lineNumber}: den ${date} gibt es nicht.` };
+    }
+    if (days[date] !== undefined) {
+      return { error: `Zeile ${lineNumber}: ${date} steht mehrfach in der Datei.` };
+    }
+
+    if (!/^\d+$/.test(sessionsRaw) || !/^\d+$/.test(minutesRaw)) {
+      return { error: `Zeile ${lineNumber}: Sessions und Minuten muessen ganze Zahlen ab 0 sein.` };
+    }
+
+    days[date] = { sessions: Number(sessionsRaw), minutes: Number(minutesRaw) };
+  }
+
+  if (Object.keys(days).length === 0) {
+    return { error: 'Die Datei enthaelt keine Datenzeilen.' };
+  }
+
+  return { days };
+}
+
+// Was das Einspielen aendern wuerde, bevor irgendetwas geaendert wird.
+// Zusammengefuehrt wird "Datei gewinnt je Tag": Tage aus der Datei
+// ueberschreiben, Tage die nur lokal existieren bleiben stehen. Eine Nullzeile
+// ist dabei eine Aussage und keine Luecke -- der Export schreibt sie fuer Tage
+// ohne Sitzung.
+function planStatsImport(days) {
+  const current = (stats && stats.dailyHistory) || {};
+  const dates = Object.keys(days).sort();
+
+  let neu = 0, gleich = 0, geaendert = 0, geleert = 0, mitSitzungen = 0;
+
+  for (const date of dates) {
+    const incoming = days[date];
+    const existing = current[date];
+    if (incoming.sessions > 0) mitSitzungen++;
+
+    if (!existing) {
+      if (incoming.sessions > 0 || incoming.minutes > 0) neu++;
+      continue;
+    }
+    if (existing.sessions === incoming.sessions && existing.minutes === incoming.minutes) {
+      gleich++;
+    } else if (incoming.sessions === 0 && incoming.minutes === 0 && existing.sessions > 0) {
+      geleert++;
+    } else {
+      geaendert++;
+    }
+  }
+
+  const unberuehrt = Object.keys(current).filter(date => days[date] === undefined).length;
+
+  return {
+    von: dates[0],
+    bis: dates[dates.length - 1],
+    tage: dates.length,
+    mitSitzungen, neu, gleich, geaendert, geleert, unberuehrt
+  };
+}
+
+// totalSessions, totalMinutes und die Streak stehen neben dailyHistory und
+// werden sonst nirgends daraus berechnet. Nach einem Import muessen sie neu
+// entstehen, sonst zeigt die Kachel etwas anderes als die Heatmap.
+function recomputeDerivedStats() {
+  const history = stats.dailyHistory || {};
+  const dates = Object.keys(history).sort();
+
+  let sessions = 0, minutes = 0;
+  for (const date of dates) {
+    sessions += history[date].sessions || 0;
+    minutes += history[date].minutes || 0;
+  }
+  stats.totalSessions = sessions;
+  stats.totalMinutes = minutes;
+
+  const withSessions = dates.filter(date => (history[date].sessions || 0) > 0);
+  if (withSessions.length === 0) {
+    stats.streak = 0;
+    stats.lastStreakDate = null;
+    stats.lastSessionDate = null;
+    stats.sessionsToday = 0;
+    return;
+  }
+
+  // Die Streak sind die zusammenhaengenden Tage bis zum letzten mit Sitzung.
+  const lastDay = withSessions[withSessions.length - 1];
+  let streak = 0;
+  const cursor = new Date(lastDay + 'T12:00:00');
+  while ((history[localDateKey(cursor)] || {}).sessions > 0) {
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  stats.streak = streak;
+
+  // checkAndUpdateStreak rechnet mit toDateString(), nicht mit dem
+  // ISO-Schluessel -- diese beiden Felder muessen in dessen Format bleiben.
+  const lastDate = new Date(lastDay + 'T12:00:00');
+  stats.lastStreakDate = lastDate.toDateString();
+  stats.lastSessionDate = lastDate.toDateString();
+
+  // Nur wenn der letzte Tag auch heute ist. Sonst stuende in der Kachel fuer
+  // heute die Zahl eines Tages im letzten Monat.
+  const today = localDateKey();
+  stats.sessionsToday = lastDay === today ? (history[today].sessions || 0) : 0;
+}
+
+function applyStatsImport(days) {
+  if (!stats.dailyHistory) stats.dailyHistory = {};
+
+  for (const date of Object.keys(days)) {
+    const incoming = days[date];
+    if (incoming.sessions === 0 && incoming.minutes === 0) {
+      // Eine Nullzeile heisst "an dem Tag war nichts", also weg damit.
+      delete stats.dailyHistory[date];
+    } else {
+      stats.dailyHistory[date] = { sessions: incoming.sessions, minutes: incoming.minutes };
+    }
+  }
+
+  recomputeDerivedStats();
+  saveStats();
+  updateStatsDisplay();
+  renderAdvancedStats();
+}
+
+function importStatsFromFile(file) {
+  const reader = new FileReader();
+
+  reader.onerror = () => showExportNotification('Die Datei konnte nicht gelesen werden.');
+  reader.onload = () => {
+    const parsed = parseStatsCSV(reader.result);
+    if (parsed.error) {
+      showExportNotification(`Nicht eingespielt: ${parsed.error}`);
+      return;
+    }
+
+    const plan = planStatsImport(parsed.days);
+    const zeilen = [
+      `Die Datei deckt ${plan.tage} Tage ab (${plan.von} bis ${plan.bis}),`,
+      `davon ${plan.mitSitzungen} mit Sitzungen.`,
+      '',
+      `Neu dazu: ${plan.neu}`,
+      `Unveraendert: ${plan.gleich}`,
+      `Werden ueberschrieben: ${plan.geaendert}`
+    ];
+    if (plan.geleert > 0) {
+      zeilen.push(`Werden geleert (lokal Sitzungen, Datei leer): ${plan.geleert}`);
+    }
+    if (plan.unberuehrt > 0) {
+      zeilen.push(`Ausserhalb des Zeitraums, bleiben unberuehrt: ${plan.unberuehrt}`);
+    }
+    zeilen.push('', 'Gesamtzahlen und Streak werden danach neu berechnet.', 'Uebernehmen?');
+
+    if (!confirm(zeilen.join('\n'))) {
+      showExportNotification('Import abgebrochen.');
+      return;
+    }
+
+    applyStatsImport(parsed.days);
+    showExportNotification(`Statistik eingespielt (${plan.tage} Tage).`);
+  };
+
+  reader.readAsText(file);
+}
+
 function exportTodosAsPDF() {
   if (!currentTodos || currentTodos.length === 0) return;
 
@@ -1493,6 +1696,16 @@ if (exportCSVBtn) {
 
 if (exportStatsBtn) {
   exportStatsBtn.addEventListener('click', exportStatsAsCSV);
+}
+
+if (importStatsBtn && importStatsInput) {
+  importStatsBtn.addEventListener('click', () => importStatsInput.click());
+  importStatsInput.addEventListener('change', () => {
+    const file = importStatsInput.files && importStatsInput.files[0];
+    if (file) importStatsFromFile(file);
+    // Zuruecksetzen, sonst loest dieselbe Datei kein zweites change-Ereignis aus.
+    importStatsInput.value = '';
+  });
 }
 
 if (exportPDFBtn) {
