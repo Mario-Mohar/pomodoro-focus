@@ -102,6 +102,7 @@ const todoContent = document.getElementById('todo-content');
 const categoryFilters = document.querySelectorAll('.category-filter');
 const exportButtons = document.getElementById('export-buttons');
 const exportCSVBtn = document.getElementById('export-csv-btn');
+const exportStatsBtn = document.getElementById('export-stats-btn');
 const exportPDFBtn = document.getElementById('export-pdf-btn');
 
 // Store current todos for export
@@ -973,11 +974,51 @@ function exportTodosAsCSV() {
 
   // Create blob and download
   const blob = new Blob([csvWithBOM], { type: 'text/csv;charset=utf-8;' });
-  const today = new Date().toISOString().split('T')[0];
+  // localDateKey statt toISOString: letzteres liefert UTC, und zwischen
+  // Mitternacht und 01:00 bzw. 02:00 stuende hier der Vortag im Dateinamen.
+  const today = localDateKey();
   const filename = `pomodoro-todos-${today}.csv`;
 
   downloadFile(blob, filename);
   showExportNotification('CSV-Export erfolgreich!');
+}
+
+// Die Sitzungsdaten sind das, was ueber Monate zusammenkommt -- sichtbar in
+// Heatmap und Wochendiagramm, entnehmbar bisher nur ueber die
+// Entwicklerkonsole. Fuer ein Werkzeug ohne Konto und ohne Server ist das ein
+// Bruch mit der eigenen Haltung: die Daten gehoeren der Nutzerin.
+function exportStatsAsCSV() {
+  const history = (stats && stats.dailyHistory) || {};
+  const days = Object.keys(history).sort();
+
+  if (days.length === 0) {
+    showExportNotification('Noch keine Sitzungen zum Exportieren.');
+    return;
+  }
+
+  // Alles ausgeben, nicht einen Zeitraum: fuer ein Sicherungsformat ist das
+  // das Richtige, und die Frage nach dem Zeitraum stellt sich in der
+  // Tabellenkalkulation ohnehin nochmal.
+  //
+  // dailyHistory enthaelt nur Tage mit Sitzungen. Die Luecken werden mit
+  // Nullzeilen aufgefuellt, sonst zeichnet jedes Diagramm aus dieser Datei
+  // eine Pause als Sprung statt als Tal.
+  const rows = [];
+  const cursor = new Date(days[0] + 'T12:00:00');
+  const last = new Date(localDateKey() + 'T12:00:00');
+
+  while (cursor <= last) {
+    const key = localDateKey(cursor);
+    const entry = history[key] || { sessions: 0, minutes: 0 };
+    rows.push(`${key},${entry.sessions || 0},${entry.minutes || 0}`);
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  const csvContent = ['Datum,Sessions,Minuten', ...rows].join('\n');
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+
+  downloadFile(blob, `pomodoro-statistik-${localDateKey()}.csv`);
+  showExportNotification(`Statistik exportiert (${rows.length} Tage).`);
 }
 
 function exportTodosAsPDF() {
@@ -1448,6 +1489,10 @@ if (todoForm) {
 // Export Buttons
 if (exportCSVBtn) {
   exportCSVBtn.addEventListener('click', exportTodosAsCSV);
+}
+
+if (exportStatsBtn) {
+  exportStatsBtn.addEventListener('click', exportStatsAsCSV);
 }
 
 if (exportPDFBtn) {

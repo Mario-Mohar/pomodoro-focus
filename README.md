@@ -32,6 +32,8 @@ läuft**. Kein Konto, kein Server, keine Datenübertragung — alles liegt im
 - **Statistik** — Sessions heute, Streak, Gesamtminuten, dazu ein
   Wochendiagramm und eine Heatmap der letzten zwölf Wochen
 - **Export** der Aufgaben als CSV oder PDF
+- **Export der Statistik** als CSV — jeder Tag seit dem ersten mit einer Zeile,
+  Tage ohne Sitzung als Nullzeile, damit die Datei direkt in ein Diagramm passt
 - **Pomodoro-Rhythmus** — Abfolge aus Arbeits- und Pausenblöcken einrichten
 - **Benachrichtigung und Ton** am Ende einer Session
 - **Zitat des Tages**, einmal täglich neu
@@ -88,8 +90,22 @@ Alles bleibt im `localStorage` des Browsers, unter diesen Schlüsseln:
 
 Daraus folgt zweierlei. Es gibt keine Registrierung, keine Cookies und nichts,
 was das Gerät verlässt — aber auch keine Synchronisierung zwischen Geräten. Wer
-die Browserdaten löscht, löscht die Aufgaben mit. Der CSV- und PDF-Export ist
-deshalb zugleich die Sicherung.
+die Browserdaten löscht, löscht die Aufgaben mit. Der Export ist deshalb
+zugleich die Sicherung — für die Aufgaben als CSV oder PDF, für die
+Sitzungsdaten als CSV unter „Erweiterte Statistiken". Ohne ihn führte der
+einzige Weg an die eigenen Zahlen über die Entwicklerkonsole.
+
+Die Statistik-CSV sieht so aus:
+
+```csv
+Datum,Sessions,Minuten
+2026-08-27,4,100
+2026-08-28,0,0
+2026-08-29,6,150
+```
+
+Wieder einlesen kann die App sie nicht — das wäre der zweite Schritt und
+brächte die Frage mit, was beim Zusammenführen mit vorhandenen Daten passiert.
 
 ## Aufbau
 
