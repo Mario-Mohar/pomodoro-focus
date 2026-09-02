@@ -1,5 +1,7 @@
 # Pomodoro Focus
 
+[![codecov](https://codecov.io/gh/Mario-Mohar/pomodoro-focus/graph/badge.svg)](https://codecov.io/gh/Mario-Mohar/pomodoro-focus)
+
 Ein Pomodoro-Timer mit Aufgabenliste und Statistik, der **vollständig im Browser
 läuft**. Kein Konto, kein Server, keine Datenübertragung — alles liegt im
 `localStorage` deines Geräts.
