@@ -21,9 +21,9 @@
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.3.3",
-    "@vitest/coverage-v8": "^4.1.11",
-    "jsdom": "^30.0.1",
+    "@vitest/coverage-v8": "^5.0.3",
+    "jsdom": "^30.1.1",
     "tailwindcss": "^4.3.3",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.3"
   }
 }
