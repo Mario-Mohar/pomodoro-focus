@@ -21,6 +21,8 @@ export function loadApp({ now = null, storage = {} } = {}) {
   const dom = new JSDOM(readFileSync(join(PUBLIC, "index.html"), "utf8"), {
     url: "http://localhost/",
     pretendToBeVisual: true,
+    // Lets the harness run app.js in jsdom's own global, see below.
+    runScripts: "outside-only",
   });
   const { window } = dom;
 
@@ -118,10 +120,13 @@ export function loadApp({ now = null, storage = {} } = {}) {
   }
 
   const source = readFileSync(join(PUBLIC, "app.js"), "utf8");
-  vm.createContext(window);
+  // jsdom's own context, not vm.createContext(window): contextifying the
+  // window object by hand gives the script a global that jsdom 30.1 no longer
+  // accepts as an EventTarget, so `window.addEventListener` in app.js throws.
+  const context = dom.getInternalVMContext();
   // The script ends in top-level calls that render the initial page. Anything
   // it throws is a real failure and should surface, not be swallowed here.
-  vm.runInContext(source, window, { filename: "app.js" });
+  vm.runInContext(source, context, { filename: "app.js" });
 
   /**
    * Evaluate an expression inside app.js's own scope.
@@ -131,7 +136,7 @@ export function loadApp({ now = null, storage = {} } = {}) {
    * in the script's global lexical environment. runInContext shares that
    * environment, so this is how a test reads or replaces it.
    */
-  const evaluate = (expression) => vm.runInContext(expression, window);
+  const evaluate = (expression) => vm.runInContext(expression, context);
 
   return { window, calls, dom, evaluate };
 }
