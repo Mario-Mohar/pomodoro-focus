@@ -283,6 +283,24 @@ function checkAndUpdateStreak() {
 
 
 
+// "Sessions heute" und die Streak stehen als gespeicherte Zahlen da und
+// wurden bisher nur beim Abschluss einer Session fortgeschrieben. Beim Start
+// und beim Zurueckkehren in den Tab deshalb gegen das heutige Datum pruefen:
+// war die letzte Session nicht heute, gibt es heute noch keine, und eine
+// Streak lebt nur, wenn die letzte Session heute oder gestern war.
+// Gespeichert wird hier nichts, das erledigt die naechste Session.
+function refreshDayStats() {
+  const today = new Date().toDateString();
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  if (stats.lastSessionDate !== today) stats.sessionsToday = 0;
+  if (stats.lastStreakDate !== today && stats.lastStreakDate !== yesterday.toDateString()) {
+    stats.streak = 0;
+  }
+  updateStatsDisplay();
+}
+
 function recordSessionLocally(minutes) {
   checkAndUpdateStreak();
   stats.sessionsToday += 1;
@@ -1560,6 +1578,7 @@ presetBtns.forEach(btn => {
 
 // Update timer immediately when tab becomes visible again
 document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) refreshDayStats();
   if (!document.hidden && isRunning && timerEndTime) {
     const now = Date.now();
     timeRemaining = Math.max(0, Math.floor((timerEndTime - now) / 1000));
@@ -1749,7 +1768,7 @@ window.deleteTodo = deleteTodo;
 loadTheme();
 showDailyQuote(); // Show daily motivation quote
 restoreTimerState(); // Restore timer state from localStorage
-updateStatsDisplay();
+refreshDayStats(); // Zeigt auch die Statistik an
 renderAdvancedStats(); // Initiale Render der erweiterten Stats
 requestNotificationPermission();
 
