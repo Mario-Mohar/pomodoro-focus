@@ -128,10 +128,17 @@ function localDateKey(date = new Date()) {
 }
 
 function loadStats() {
-  const key = getStatsKey();
-  const saved = localStorage.getItem(key);
-  if (saved) {
-    return JSON.parse(saved);
+  // Ein kaputter Eintrag oder gesperrter Speicher darf die App nicht
+  // lahmlegen: loadStats() laeuft auf oberster Ebene, ein Fehler hier bricht
+  // das ganze Skript ab. Dann lieber mit leerer Statistik weiter.
+  try {
+    const saved = localStorage.getItem(getStatsKey());
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && typeof parsed === 'object') return parsed;
+    }
+  } catch (error) {
+    console.error('Statistik konnte nicht gelesen werden:', error);
   }
   return {
     lastSessionDate: null,
@@ -145,8 +152,11 @@ function loadStats() {
 }
 
 function saveStats() {
-  const key = getStatsKey();
-  localStorage.setItem(key, JSON.stringify(stats));
+  try {
+    localStorage.setItem(getStatsKey(), JSON.stringify(stats));
+  } catch (error) {
+    console.error('Statistik konnte nicht gespeichert werden:', error);
+  }
 }
 
 function updateStatsDisplay() {
@@ -186,8 +196,7 @@ function loadTimerState() {
 
     // Calculate remaining time based on endTime if timer was running
     if (timerState.isRunning && timerState.timerEndTime) {
-      const now = Date.now();
-      timerState.timeRemaining = Math.max(0, Math.floor((timerState.timerEndTime - now) / 1000));
+      timerState.timeRemaining = secondsUntil(timerState.timerEndTime);
 
       // If time ran out while page was closed. isRunning muss hier auf false,
       // damit unten nicht weitergelaufen wird -- deshalb braucht der Abschluss
@@ -272,6 +281,24 @@ function checkAndUpdateStreak() {
 
 
 
+
+// "Sessions heute" und die Streak stehen als gespeicherte Zahlen da und
+// wurden bisher nur beim Abschluss einer Session fortgeschrieben. Beim Start
+// und beim Zurueckkehren in den Tab deshalb gegen das heutige Datum pruefen:
+// war die letzte Session nicht heute, gibt es heute noch keine, und eine
+// Streak lebt nur, wenn die letzte Session heute oder gestern war.
+// Gespeichert wird hier nichts, das erledigt die naechste Session.
+function refreshDayStats() {
+  const today = new Date().toDateString();
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  if (stats.lastSessionDate !== today) stats.sessionsToday = 0;
+  if (stats.lastStreakDate !== today && stats.lastStreakDate !== yesterday.toDateString()) {
+    stats.streak = 0;
+  }
+  updateStatsDisplay();
+}
 
 function recordSessionLocally(minutes) {
   checkAndUpdateStreak();
@@ -462,22 +489,28 @@ function startTimer() {
   // Use Web Worker if available (runs in background without throttling)
   if (timerWorker) {
     timerWorker.postMessage({ action: 'start', data: { endTime: timerEndTime } });
+    return;
   }
 
-  // Fallback interval (also runs as backup, Web Worker handles completion)
+  // Fallback interval, nur ohne Worker. Liefen beide, schrieben zwei Uhren
+  // in dieselbe Anzeige.
   timerInterval = setInterval(() => {
     // Calculate remaining time based on actual time (works even when tab is in background)
-    const now = Date.now();
-    timeRemaining = Math.max(0, Math.floor((timerEndTime - now) / 1000));
+    timeRemaining = secondsUntil(timerEndTime);
     updateTimerDisplay();
     saveTimerState(); // Save state every second
 
-    // If no Web Worker, handle completion here
-    if (!timerWorker && timeRemaining <= 0) {
+    if (timeRemaining <= 0) {
       stopTimer();
       onTimerComplete();
     }
   }, 1000);
+}
+
+// Restzeit in ganzen Sekunden, aufgerundet: angezeigt wird die laufende
+// Sekunde, 00:00 erst, wenn die Zeit wirklich um ist.
+function secondsUntil(endTime) {
+  return Math.max(0, Math.ceil((endTime - Date.now()) / 1000));
 }
 
 function pauseTimer() {
@@ -658,7 +691,8 @@ function closeModal(modal) {
 // Diese App laeuft ohne Server: Aufgaben liegen im localStorage des Browsers.
 // Die Datensaetze behalten die Form, die der Rest der App erwartet
 // (id, text, category, priority, completed, due_date, recurrence,
-// recurrence_end_date, created_at).
+// recurrence_end_date, created_at). Erledigte wiederkehrende Aufgaben
+// bekommen recurrence_next_created, sobald ihr Folgetermin angelegt ist.
 
 const TODOS_KEY = 'pomodoroTodos';
 
@@ -715,6 +749,7 @@ async function updateTodo(id, updates) {
     writeTodos(todos);
   }
   fetchTodos();
+  if (updates.completed) checkRecurrence(id);
 }
 
 async function deleteTodo(id) {
@@ -744,17 +779,31 @@ function getPriorityBadge(priority) {
 }
 
 // Due Date Functions
+
+// Das Datumsfeld liefert "YYYY-MM-DD". new Date() liest das als
+// UTC-Mitternacht, westlich von UTC ist das in Ortszeit noch der Vortag.
+// Deshalb selbst zerlegen und als lokale Mitternacht bauen. Aeltere
+// Folgetermine liegen als voller ISO-Zeitstempel vor, die sind ein
+// Zeitpunkt und bleiben bei new Date().
+function parseDueDate(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  const date = match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    : new Date(value);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
 function getDueDateStatus(due_date) {
   if (!due_date) return 'normal';
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const dueDate = new Date(due_date);
-  dueDate.setHours(0, 0, 0, 0);
+  const dueDate = parseDueDate(due_date);
 
   const diffTime = dueDate - today;
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
 
   if (diffDays < 0) return 'overdue';
   if (diffDays === 0) return 'today';
@@ -765,7 +814,7 @@ function getDueDateStatus(due_date) {
 function formatDueDate(due_date) {
   if (!due_date) return null;
 
-  const date = new Date(due_date);
+  const date = parseDueDate(due_date);
   const day = String(date.getDate()).padStart(2, '0');
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const year = date.getFullYear();
@@ -824,47 +873,54 @@ function getRecurrenceBadge(recurrence) {
   return `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold" style="background-color: ${badge.color}; color: white;" title="Wiederkehrend: ${badge.text}">${badge.icon} ${badge.text}</span>`;
 }
 
-async function checkRecurrence() {
-  // Legt fuer erledigte, heute faellige Aufgaben mit Wiederholung die
-  // naechste Instanz an. Entspricht der Logik, die vorher auf dem Server lag.
+async function checkRecurrence(heuteAbgehakt) {
+  // Legt fuer erledigte Aufgaben mit Wiederholung die naechste Instanz an.
+  // Laeuft beim Start und nach jedem Abhaken. Ob vorher, am Tag oder
+  // verspaetet abgehakt wurde, ist egal; recurrence_next_created merkt sich,
+  // dass der Folgetermin schon existiert, damit erneutes Abhaken oder
+  // Neuladen keine Doppel erzeugt.
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   const todos = readTodos();
   const followUps = [];
+  let changed = false;
 
   for (const todo of todos) {
     if (!todo.completed || !todo.recurrence || !todo.due_date) continue;
+    if (todo.recurrence_next_created) continue;
 
-    const dueDate = new Date(todo.due_date);
-    dueDate.setHours(0, 0, 0, 0);
-    if (dueDate.getTime() !== today.getTime()) continue;
+    const step = { daily: 1, weekly: 7, monthly: 30 }[todo.recurrence];
+    if (!step) continue;
 
-    if (todo.recurrence_end_date) {
-      const endDate = new Date(todo.recurrence_end_date);
-      endDate.setHours(0, 0, 0, 0);
-      if (today > endDate) continue;
-    }
+    // Verpasste Termine ueberspringen: der Folgetermin liegt fruehestens heute.
+    // Wurde die Aufgabe gerade abgehakt, ist der heutige Termin damit erledigt
+    // und der naechste liegt fruehestens morgen.
+    const frueheste = new Date(today);
+    if (heuteAbgehakt != null && String(todo.id) === String(heuteAbgehakt)) frueheste.setDate(frueheste.getDate() + 1);
+    const nextDue = parseDueDate(todo.due_date);
+    do {
+      nextDue.setDate(nextDue.getDate() + step);
+    } while (nextDue < frueheste);
 
-    const nextDue = new Date(dueDate);
-    if (todo.recurrence === 'daily') nextDue.setDate(nextDue.getDate() + 1);
-    else if (todo.recurrence === 'weekly') nextDue.setDate(nextDue.getDate() + 7);
-    else if (todo.recurrence === 'monthly') nextDue.setDate(nextDue.getDate() + 30);
-    else continue;
+    todo.recurrence_next_created = true;
+    changed = true;
+
+    if (todo.recurrence_end_date && nextDue > parseDueDate(todo.recurrence_end_date)) continue;
 
     followUps.push({
       text: todo.text,
       category: todo.category,
       priority: todo.priority,
       completed: 0,
-      due_date: nextDue.toISOString(),
+      due_date: localDateKey(nextDue),
       recurrence: todo.recurrence,
       recurrence_end_date: todo.recurrence_end_date,
       created_at: new Date().toISOString(),
     });
   }
 
-  if (!followUps.length) return;
+  if (!changed) return;
 
   let nextId = nextTodoId(todos);
   for (const followUp of followUps) {
@@ -1531,9 +1587,9 @@ presetBtns.forEach(btn => {
 
 // Update timer immediately when tab becomes visible again
 document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) refreshDayStats();
   if (!document.hidden && isRunning && timerEndTime) {
-    const now = Date.now();
-    timeRemaining = Math.max(0, Math.floor((timerEndTime - now) / 1000));
+    timeRemaining = secondsUntil(timerEndTime);
     updateTimerDisplay();
 
     if (timeRemaining <= 0) {
@@ -1720,7 +1776,7 @@ window.deleteTodo = deleteTodo;
 loadTheme();
 showDailyQuote(); // Show daily motivation quote
 restoreTimerState(); // Restore timer state from localStorage
-updateStatsDisplay();
+refreshDayStats(); // Zeigt auch die Statistik an
 renderAdvancedStats(); // Initiale Render der erweiterten Stats
 requestNotificationPermission();
 
@@ -1767,8 +1823,7 @@ if (pwaInstallBtn) {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && isRunning && timerEndTime) {
     // Recalculate time when page becomes visible
-    const now = Date.now();
-    timeRemaining = Math.max(0, Math.floor((timerEndTime - now) / 1000));
+    timeRemaining = secondsUntil(timerEndTime);
     updateTimerDisplay();
 
     // Check if timer completed while in background
@@ -2287,6 +2342,7 @@ window.rhythmActive = () => rhythmActive;
 // ausgewertet sind, darf initial gerendert werden.
 // ============================================================
 updateUI();
+checkRecurrence(); // Folgetermine fuer erledigte wiederkehrende Aufgaben
 fetchTodos();
 renderCustomTimers();
 

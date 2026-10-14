@@ -99,6 +99,17 @@ describe("loadStats", () => {
     expect(window.loadStats().streak).toBe(7);
     expect(window.loadStats().dailyHistory["2026-08-31"].minutes).toBe(75);
   });
+
+  it("falls back to empty stats when the stored entry is not valid JSON", () => {
+    // loadStats() runs at the top level, so a throw here used to stop the
+    // whole script: no todos, no quote, and Start did nothing.
+    const { window, evaluate } = loadApp({ storage: { pomodoroStats: '{"dailyHistory":' } });
+    expect(evaluate("stats")).toMatchObject({ sessionsToday: 0, totalSessions: 0, streak: 0 });
+    expect(evaluate("stats").dailyHistory).toEqual({});
+
+    window.document.getElementById("start-btn").click();
+    expect(evaluate("isRunning")).toBe(true);
+  });
 });
 
 describe("recordSessionLocally", () => {
@@ -216,5 +227,71 @@ describe("checkAndUpdateStreak", () => {
     window.checkAndUpdateStreak();
     expect(evaluate("stats").sessionsToday).toBe(3);
     expect(evaluate("stats").streak).toBe(2);
+  });
+});
+
+describe("refreshDayStats", () => {
+  // One session on 12 October, then the app is opened again later.
+  const afterOneSession = JSON.stringify({
+    lastSessionDate: new Date(2026, 9, 12).toDateString(),
+    sessionsToday: 1,
+    totalSessions: 1,
+    totalMinutes: 25,
+    streak: 1,
+    lastStreakDate: new Date(2026, 9, 12).toDateString(),
+    dailyHistory: { "2026-10-12": { sessions: 1, minutes: 25 } },
+  });
+
+  function tile(window, id) {
+    return window.document.getElementById(id).textContent;
+  }
+
+  it("keeps the numbers on the same day", () => {
+    const { window, evaluate } = loadApp({
+      now: new Date(2026, 9, 12, 20, 0),
+      storage: { pomodoroStats: afterOneSession },
+    });
+    expect(evaluate("stats")).toMatchObject({ sessionsToday: 1, streak: 1 });
+    expect(tile(window, "sessions-today")).toBe("1");
+  });
+
+  it("shows no sessions today the next day but keeps the streak alive", () => {
+    const { window, evaluate } = loadApp({
+      now: new Date(2026, 9, 13, 8, 0),
+      storage: { pomodoroStats: afterOneSession },
+    });
+    expect(evaluate("stats")).toMatchObject({ sessionsToday: 0, streak: 1 });
+    expect(tile(window, "sessions-today")).toBe("0");
+    expect(tile(window, "streak-count")).toBe("1");
+  });
+
+  it("drops the streak after a day without a session", () => {
+    const { window, evaluate } = loadApp({
+      now: new Date(2026, 9, 16, 8, 0),
+      storage: { pomodoroStats: afterOneSession },
+    });
+    expect(evaluate("stats")).toMatchObject({ sessionsToday: 0, streak: 0, totalMinutes: 25 });
+    expect(tile(window, "streak-count")).toBe("0");
+  });
+
+  it("starts a new streak at one with the next session", () => {
+    const { window, evaluate } = loadApp({
+      now: new Date(2026, 9, 16, 8, 0),
+      storage: { pomodoroStats: afterOneSession },
+    });
+    window.recordSessionLocally(25);
+    expect(evaluate("stats")).toMatchObject({ sessionsToday: 1, streak: 1, totalSessions: 2 });
+  });
+
+  it("runs again when the tab becomes visible", () => {
+    const { window, evaluate } = loadApp({
+      now: new Date(2026, 9, 12, 20, 0),
+      storage: { pomodoroStats: afterOneSession },
+    });
+    // Pretend the day turned over while the tab sat in the background.
+    evaluate("stats.lastSessionDate = 'Sun Oct 11 2026'");
+    window.document.dispatchEvent(new window.Event("visibilitychange"));
+    expect(evaluate("stats").sessionsToday).toBe(0);
+    expect(tile(window, "sessions-today")).toBe("0");
   });
 });

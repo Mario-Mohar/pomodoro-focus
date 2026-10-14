@@ -27,14 +27,16 @@ function startTicking() {
   timerInterval = setInterval(() => {
     if (!endTime) return;
 
-    const now = Date.now();
-    const remaining = Math.max(0, Math.floor((endTime - now) / 1000));
+    // Aufrunden: 1499,9 s Rest sind noch 25:00, nicht 24:59. Mit floor lag
+    // die Anzeige eine Sekunde vorn und 00:00 kam eine Sekunde zu frueh.
+    const msLeft = endTime - Date.now();
+    const remaining = Math.max(0, Math.ceil(msLeft / 1000));
 
     // Send tick to main thread
     self.postMessage({ type: 'tick', remaining });
 
     // Check if timer completed
-    if (remaining <= 0) {
+    if (msLeft <= 0) {
       self.postMessage({ type: 'complete' });
       stopTicking();
     }
