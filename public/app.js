@@ -754,17 +754,31 @@ function getPriorityBadge(priority) {
 }
 
 // Due Date Functions
+
+// Das Datumsfeld liefert "YYYY-MM-DD". new Date() liest das als
+// UTC-Mitternacht, westlich von UTC ist das in Ortszeit noch der Vortag.
+// Deshalb selbst zerlegen und als lokale Mitternacht bauen. Aeltere
+// Folgetermine liegen als voller ISO-Zeitstempel vor, die sind ein
+// Zeitpunkt und bleiben bei new Date().
+function parseDueDate(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  const date = match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    : new Date(value);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
 function getDueDateStatus(due_date) {
   if (!due_date) return 'normal';
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const dueDate = new Date(due_date);
-  dueDate.setHours(0, 0, 0, 0);
+  const dueDate = parseDueDate(due_date);
 
   const diffTime = dueDate - today;
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
 
   if (diffDays < 0) return 'overdue';
   if (diffDays === 0) return 'today';
@@ -775,7 +789,7 @@ function getDueDateStatus(due_date) {
 function formatDueDate(due_date) {
   if (!due_date) return null;
 
-  const date = new Date(due_date);
+  const date = parseDueDate(due_date);
   const day = String(date.getDate()).padStart(2, '0');
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const year = date.getFullYear();
