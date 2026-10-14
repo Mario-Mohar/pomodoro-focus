@@ -128,10 +128,17 @@ function localDateKey(date = new Date()) {
 }
 
 function loadStats() {
-  const key = getStatsKey();
-  const saved = localStorage.getItem(key);
-  if (saved) {
-    return JSON.parse(saved);
+  // Ein kaputter Eintrag oder gesperrter Speicher darf die App nicht
+  // lahmlegen: loadStats() laeuft auf oberster Ebene, ein Fehler hier bricht
+  // das ganze Skript ab. Dann lieber mit leerer Statistik weiter.
+  try {
+    const saved = localStorage.getItem(getStatsKey());
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && typeof parsed === 'object') return parsed;
+    }
+  } catch (error) {
+    console.error('Statistik konnte nicht gelesen werden:', error);
   }
   return {
     lastSessionDate: null,
@@ -145,8 +152,11 @@ function loadStats() {
 }
 
 function saveStats() {
-  const key = getStatsKey();
-  localStorage.setItem(key, JSON.stringify(stats));
+  try {
+    localStorage.setItem(getStatsKey(), JSON.stringify(stats));
+  } catch (error) {
+    console.error('Statistik konnte nicht gespeichert werden:', error);
+  }
 }
 
 function updateStatsDisplay() {

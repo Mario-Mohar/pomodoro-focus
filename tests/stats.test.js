@@ -99,6 +99,17 @@ describe("loadStats", () => {
     expect(window.loadStats().streak).toBe(7);
     expect(window.loadStats().dailyHistory["2026-08-31"].minutes).toBe(75);
   });
+
+  it("falls back to empty stats when the stored entry is not valid JSON", () => {
+    // loadStats() runs at the top level, so a throw here used to stop the
+    // whole script: no todos, no quote, and Start did nothing.
+    const { window, evaluate } = loadApp({ storage: { pomodoroStats: '{"dailyHistory":' } });
+    expect(evaluate("stats")).toMatchObject({ sessionsToday: 0, totalSessions: 0, streak: 0 });
+    expect(evaluate("stats").dailyHistory).toEqual({});
+
+    window.document.getElementById("start-btn").click();
+    expect(evaluate("isRunning")).toBe(true);
+  });
 });
 
 describe("recordSessionLocally", () => {
