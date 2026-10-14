@@ -121,7 +121,8 @@ describe("recurring todos", () => {
     });
     await window.updateTodo(1, { completed: true });
 
-    expect(openOnes(window)[0].due_date).toBe("2026-10-13");
+    // Heute abgehakt heisst: heute erledigt, der naechste Termin ist morgen.
+    expect(openOnes(window)[0].due_date).toBe("2026-10-14");
   });
 
   it("stops after the recurrence end date", async () => {

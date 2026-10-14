@@ -749,7 +749,7 @@ async function updateTodo(id, updates) {
     writeTodos(todos);
   }
   fetchTodos();
-  if (updates.completed) checkRecurrence();
+  if (updates.completed) checkRecurrence(id);
 }
 
 async function deleteTodo(id) {
@@ -873,7 +873,7 @@ function getRecurrenceBadge(recurrence) {
   return `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold" style="background-color: ${badge.color}; color: white;" title="Wiederkehrend: ${badge.text}">${badge.icon} ${badge.text}</span>`;
 }
 
-async function checkRecurrence() {
+async function checkRecurrence(heuteAbgehakt) {
   // Legt fuer erledigte Aufgaben mit Wiederholung die naechste Instanz an.
   // Laeuft beim Start und nach jedem Abhaken. Ob vorher, am Tag oder
   // verspaetet abgehakt wurde, ist egal; recurrence_next_created merkt sich,
@@ -894,10 +894,14 @@ async function checkRecurrence() {
     if (!step) continue;
 
     // Verpasste Termine ueberspringen: der Folgetermin liegt fruehestens heute.
+    // Wurde die Aufgabe gerade abgehakt, ist der heutige Termin damit erledigt
+    // und der naechste liegt fruehestens morgen.
+    const frueheste = new Date(today);
+    if (heuteAbgehakt != null && String(todo.id) === String(heuteAbgehakt)) frueheste.setDate(frueheste.getDate() + 1);
     const nextDue = parseDueDate(todo.due_date);
     do {
       nextDue.setDate(nextDue.getDate() + step);
-    } while (nextDue < today);
+    } while (nextDue < frueheste);
 
     todo.recurrence_next_created = true;
     changed = true;
