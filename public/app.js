@@ -668,7 +668,8 @@ function closeModal(modal) {
 // Diese App laeuft ohne Server: Aufgaben liegen im localStorage des Browsers.
 // Die Datensaetze behalten die Form, die der Rest der App erwartet
 // (id, text, category, priority, completed, due_date, recurrence,
-// recurrence_end_date, created_at).
+// recurrence_end_date, created_at). Erledigte wiederkehrende Aufgaben
+// bekommen recurrence_next_created, sobald ihr Folgetermin angelegt ist.
 
 const TODOS_KEY = 'pomodoroTodos';
 
@@ -725,6 +726,7 @@ async function updateTodo(id, updates) {
     writeTodos(todos);
   }
   fetchTodos();
+  if (updates.completed) checkRecurrence();
 }
 
 async function deleteTodo(id) {
@@ -849,46 +851,49 @@ function getRecurrenceBadge(recurrence) {
 }
 
 async function checkRecurrence() {
-  // Legt fuer erledigte, heute faellige Aufgaben mit Wiederholung die
-  // naechste Instanz an. Entspricht der Logik, die vorher auf dem Server lag.
+  // Legt fuer erledigte Aufgaben mit Wiederholung die naechste Instanz an.
+  // Laeuft beim Start und nach jedem Abhaken. Ob vorher, am Tag oder
+  // verspaetet abgehakt wurde, ist egal; recurrence_next_created merkt sich,
+  // dass der Folgetermin schon existiert, damit erneutes Abhaken oder
+  // Neuladen keine Doppel erzeugt.
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   const todos = readTodos();
   const followUps = [];
+  let changed = false;
 
   for (const todo of todos) {
     if (!todo.completed || !todo.recurrence || !todo.due_date) continue;
+    if (todo.recurrence_next_created) continue;
 
-    const dueDate = new Date(todo.due_date);
-    dueDate.setHours(0, 0, 0, 0);
-    if (dueDate.getTime() !== today.getTime()) continue;
+    const step = { daily: 1, weekly: 7, monthly: 30 }[todo.recurrence];
+    if (!step) continue;
 
-    if (todo.recurrence_end_date) {
-      const endDate = new Date(todo.recurrence_end_date);
-      endDate.setHours(0, 0, 0, 0);
-      if (today > endDate) continue;
-    }
+    // Verpasste Termine ueberspringen: der Folgetermin liegt fruehestens heute.
+    const nextDue = parseDueDate(todo.due_date);
+    do {
+      nextDue.setDate(nextDue.getDate() + step);
+    } while (nextDue < today);
 
-    const nextDue = new Date(dueDate);
-    if (todo.recurrence === 'daily') nextDue.setDate(nextDue.getDate() + 1);
-    else if (todo.recurrence === 'weekly') nextDue.setDate(nextDue.getDate() + 7);
-    else if (todo.recurrence === 'monthly') nextDue.setDate(nextDue.getDate() + 30);
-    else continue;
+    todo.recurrence_next_created = true;
+    changed = true;
+
+    if (todo.recurrence_end_date && nextDue > parseDueDate(todo.recurrence_end_date)) continue;
 
     followUps.push({
       text: todo.text,
       category: todo.category,
       priority: todo.priority,
       completed: 0,
-      due_date: nextDue.toISOString(),
+      due_date: localDateKey(nextDue),
       recurrence: todo.recurrence,
       recurrence_end_date: todo.recurrence_end_date,
       created_at: new Date().toISOString(),
     });
   }
 
-  if (!followUps.length) return;
+  if (!changed) return;
 
   let nextId = nextTodoId(todos);
   for (const followUp of followUps) {
@@ -2311,6 +2316,7 @@ window.rhythmActive = () => rhythmActive;
 // ausgewertet sind, darf initial gerendert werden.
 // ============================================================
 updateUI();
+checkRecurrence(); // Folgetermine fuer erledigte wiederkehrende Aufgaben
 fetchTodos();
 renderCustomTimers();
 
