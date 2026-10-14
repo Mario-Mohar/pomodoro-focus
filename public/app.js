@@ -196,8 +196,7 @@ function loadTimerState() {
 
     // Calculate remaining time based on endTime if timer was running
     if (timerState.isRunning && timerState.timerEndTime) {
-      const now = Date.now();
-      timerState.timeRemaining = Math.max(0, Math.floor((timerState.timerEndTime - now) / 1000));
+      timerState.timeRemaining = secondsUntil(timerState.timerEndTime);
 
       // If time ran out while page was closed. isRunning muss hier auf false,
       // damit unten nicht weitergelaufen wird -- deshalb braucht der Abschluss
@@ -490,22 +489,28 @@ function startTimer() {
   // Use Web Worker if available (runs in background without throttling)
   if (timerWorker) {
     timerWorker.postMessage({ action: 'start', data: { endTime: timerEndTime } });
+    return;
   }
 
-  // Fallback interval (also runs as backup, Web Worker handles completion)
+  // Fallback interval, nur ohne Worker. Liefen beide, schrieben zwei Uhren
+  // in dieselbe Anzeige.
   timerInterval = setInterval(() => {
     // Calculate remaining time based on actual time (works even when tab is in background)
-    const now = Date.now();
-    timeRemaining = Math.max(0, Math.floor((timerEndTime - now) / 1000));
+    timeRemaining = secondsUntil(timerEndTime);
     updateTimerDisplay();
     saveTimerState(); // Save state every second
 
-    // If no Web Worker, handle completion here
-    if (!timerWorker && timeRemaining <= 0) {
+    if (timeRemaining <= 0) {
       stopTimer();
       onTimerComplete();
     }
   }, 1000);
+}
+
+// Restzeit in ganzen Sekunden, aufgerundet: angezeigt wird die laufende
+// Sekunde, 00:00 erst, wenn die Zeit wirklich um ist.
+function secondsUntil(endTime) {
+  return Math.max(0, Math.ceil((endTime - Date.now()) / 1000));
 }
 
 function pauseTimer() {
@@ -1580,8 +1585,7 @@ presetBtns.forEach(btn => {
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) refreshDayStats();
   if (!document.hidden && isRunning && timerEndTime) {
-    const now = Date.now();
-    timeRemaining = Math.max(0, Math.floor((timerEndTime - now) / 1000));
+    timeRemaining = secondsUntil(timerEndTime);
     updateTimerDisplay();
 
     if (timeRemaining <= 0) {
@@ -1815,8 +1819,7 @@ if (pwaInstallBtn) {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && isRunning && timerEndTime) {
     // Recalculate time when page becomes visible
-    const now = Date.now();
-    timeRemaining = Math.max(0, Math.floor((timerEndTime - now) / 1000));
+    timeRemaining = secondsUntil(timerEndTime);
     updateTimerDisplay();
 
     // Check if timer completed while in background

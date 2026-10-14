@@ -17,7 +17,7 @@ import vm from "node:vm";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(HERE, "..", "public");
 
-export function loadApp({ now = null, storage = {} } = {}) {
+export function loadApp({ now = null, storage = {}, worker = true } = {}) {
   const dom = new JSDOM(readFileSync(join(PUBLIC, "index.html"), "utf8"), {
     url: "http://localhost/",
     pretendToBeVisual: true,
@@ -78,12 +78,19 @@ export function loadApp({ now = null, storage = {} } = {}) {
     }
     close() {}
   };
-  window.Worker = class {
-    constructor() {}
-    postMessage() {}
-    terminate() {}
-    addEventListener() {}
-  };
+  // worker: false leaves Worker undefined, so app.js takes its fallback timer.
+  if (worker) {
+    window.Worker = class {
+      constructor() {
+        this.posted = [];
+      }
+      postMessage(message) {
+        this.posted.push(message);
+      }
+      terminate() {}
+      addEventListener() {}
+    };
+  }
   Object.defineProperty(window.navigator, "serviceWorker", {
     configurable: true,
     value: { register: () => Promise.resolve({}), ready: Promise.resolve({}) },
